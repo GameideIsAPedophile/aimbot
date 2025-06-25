@@ -2,52 +2,60 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
 
--- Settings
+-- ✅ Settings
 local aimbotEnabled = false
 local visibilityCheck = false
 local aimAtHead = false
 local teamCheck = false
 
--- Utility: Check if target is visible (basic raycast)
-local function isTargetVisible(targetPosition)
+-- 🧠 Utility: Check if target is visible (basic raycast)
+local function isTargetVisible(targetPlayer)
+    if not targetPlayer.Character then return false end
+    local targetPart = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetPart then return false end
+
     local origin = Camera.CFrame.Position
-    local direction = (targetPosition - origin).Unit * 1000
+    local direction = (targetPart.Position - origin).Unit * 1000
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
     raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
     local result = workspace:Raycast(origin, direction, raycastParams)
 
     if result and result.Instance then
-        local hitPart = result.Instance
-        if hitPart:IsDescendantOf(workspace:FindFirstChildOfClass("Model")) then
-            return false -- Something is blocking
+        if result.Instance:IsDescendantOf(targetPlayer.Character) then
+            return true -- Direct line of sight
+        else
+            return false -- Something else is blocking
         end
     end
 
-    return true
+    return true -- No obstruction
 end
 
--- Find closest player considering options
+-- 🔍 Find closest player with all checks
 local function getClosestPlayer()
     local closest = nil
     local shortestDistance = math.huge
 
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            if teamCheck and player.Team == LocalPlayer.Team then
-                -- Skip teammates if enabled
-                goto continue
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then
+                continue
             end
 
-            local targetPart = aimAtHead and player.Character:FindFirstChild("Head") or player.Character.HumanoidRootPart
-            if not targetPart then goto continue end
+            if teamCheck and player.Team == LocalPlayer.Team then
+                continue
+            end
 
+            local targetPart = player.Character.HumanoidRootPart
             local distance = (targetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
 
             if distance < shortestDistance then
                 if visibilityCheck then
-                    if isTargetVisible(targetPart.Position) then
+                    if isTargetVisible(player) then
                         closest = player
                         shortestDistance = distance
                     end
@@ -57,82 +65,124 @@ local function getClosestPlayer()
                 end
             end
         end
-        ::continue::
     end
 
     return closest
 end
 
--- Aimbot logic
+-- 🎯 Aimbot logic
 RunService.RenderStepped:Connect(function()
     if aimbotEnabled then
         local target = getClosestPlayer()
         if target and target.Character then
-            local targetPart = aimAtHead and target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")
-            if targetPart then
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
+            local humanoid = target.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                local targetPart
+                if aimAtHead then
+                    targetPart = target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")
+                else
+                    targetPart = target.Character:FindFirstChild("HumanoidRootPart")
+                end
+
+                if targetPart then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
+                end
             end
         end
     end
 end)
 
--- GUI Setup
+-- 📱 UI Setup
 local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 ScreenGui.Name = "AimbotUI"
 
--- Main draggable frame
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 250, 0, 170)
-mainFrame.Position = UDim2.new(0, 20, 0, 20)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = ScreenGui
-mainFrame.Active = true
-mainFrame.Draggable = true
+-- Container frame (for dragging and layout)
+local container = Instance.new("Frame")
+container.Size = UDim2.new(0, 260, 0, 160)
+container.Position = UDim2.new(0, 20, 0, 20)
+container.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+container.BorderSizePixel = 0
+container.Parent = ScreenGui
+container.Active = true
+container.Draggable = true
 
--- Helper function to create buttons
-local function createButton(text, position, parent)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 220, 0, 30)
-    btn.Position = position
-    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 18
-    btn.Text = text
-    btn.Parent = parent
-    return btn
-end
+-- Title label
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 25)
+title.BackgroundTransparency = 1
+title.Text = "Mobile Aimbot Settings"
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+title.TextColor3 = Color3.new(1,1,1)
+title.Parent = container
 
--- Aimbot Toggle Button
-local toggleButton = createButton("Aimbot: OFF", UDim2.new(0, 10, 0, 10), mainFrame)
+-- 🟢 Aimbot Toggle Button
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 220, 0, 35)
+toggleButton.Position = UDim2.new(0, 20, 0, 35)
 toggleButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+toggleButton.TextColor3 = Color3.new(1, 1, 1)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 20
+toggleButton.Text = "Aimbot: OFF"
+toggleButton.Parent = container
+
 toggleButton.MouseButton1Click:Connect(function()
     aimbotEnabled = not aimbotEnabled
     toggleButton.Text = "Aimbot: " .. (aimbotEnabled and "ON" or "OFF")
-    toggleButton.BackgroundColor3 = aimbotEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(150, 0, 0)
+    toggleButton.BackgroundColor3 = aimbotEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
 end)
 
--- Visibility Check Button
-local visibilityCheckbox = createButton("Visibility Check: OFF", UDim2.new(0, 10, 0, 50), mainFrame)
+-- ✅ Visibility Check Toggle
+local visibilityCheckbox = Instance.new("TextButton")
+visibilityCheckbox.Size = UDim2.new(0, 220, 0, 35)
+visibilityCheckbox.Position = UDim2.new(0, 20, 0, 75)
+visibilityCheckbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+visibilityCheckbox.TextColor3 = Color3.new(1, 1, 1)
+visibilityCheckbox.Font = Enum.Font.SourceSansBold
+visibilityCheckbox.TextSize = 20
+visibilityCheckbox.Text = "Visibility Check: OFF"
+visibilityCheckbox.Parent = container
+
 visibilityCheckbox.MouseButton1Click:Connect(function()
     visibilityCheck = not visibilityCheck
     visibilityCheckbox.Text = "Visibility Check: " .. (visibilityCheck and "ON" or "OFF")
     visibilityCheckbox.BackgroundColor3 = visibilityCheck and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
 end)
 
--- Aim at Head Button
-local headAimCheckbox = createButton("Aim at Head: OFF", UDim2.new(0, 10, 0, 90), mainFrame)
-headAimCheckbox.MouseButton1Click:Connect(function()
+-- 🎯 Aim at Head Toggle
+local aimHeadCheckbox = Instance.new("TextButton")
+aimHeadCheckbox.Size = UDim2.new(0, 220, 0, 35)
+aimHeadCheckbox.Position = UDim2.new(0, 20, 0, 115)
+aimHeadCheckbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+aimHeadCheckbox.TextColor3 = Color3.new(1, 1, 1)
+aimHeadCheckbox.Font = Enum.Font.SourceSansBold
+aimHeadCheckbox.TextSize = 20
+aimHeadCheckbox.Text = "Aim at Head: OFF"
+aimHeadCheckbox.Parent = container
+
+aimHeadCheckbox.MouseButton1Click:Connect(function()
     aimAtHead = not aimAtHead
-    headAimCheckbox.Text = "Aim at Head: " .. (aimAtHead and "ON" or "OFF")
-    headAimCheckbox.BackgroundColor3 = aimAtHead and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
+    aimHeadCheckbox.Text = "Aim at Head: " .. (aimAtHead and "ON" or "OFF")
+    aimHeadCheckbox.BackgroundColor3 = aimAtHead and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
 end)
 
--- Ignore Teammates Button
-local teamCheckCheckbox = createButton("Ignore Teammates: OFF", UDim2.new(0, 10, 0, 130), mainFrame)
-teamCheckCheckbox.MouseButton1Click:Connect(function()
+-- 🛡️ Team Check Toggle
+local teamCheckbox = Instance.new("TextButton")
+teamCheckbox.Size = UDim2.new(0, 220, 0, 35)
+teamCheckbox.Position = UDim2.new(0, 20, 0, 155)
+teamCheckbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+teamCheckbox.TextColor3 = Color3.new(1, 1, 1)
+teamCheckbox.Font = Enum.Font.SourceSansBold
+teamCheckbox.TextSize = 20
+teamCheckbox.Text = "Ignore Team: OFF"
+teamCheckbox.Parent = container
+
+teamCheckbox.MouseButton1Click:Connect(function()
     teamCheck = not teamCheck
-    teamCheckCheckbox.Text = "Ignore Teammates: " .. (teamCheck and "ON" or "OFF")
-    teamCheckCheckbox.BackgroundColor3 = teamCheck and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
+    teamCheckbox.Text = "Ignore Team: " .. (teamCheck and "ON" or "OFF")
+    teamCheckbox.BackgroundColor3 = teamCheck and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
 end)
+
+-- Adjust container size to fit all buttons
+container.Size = UDim2.new(0, 260, 0, 200)
