@@ -2,66 +2,118 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
 
--- ✅ Settings
+-- Settings
 local aimbotEnabled = false
 local visibilityCheck = false
 local aimAtHead = false
-local ignoreTeam = false
+local teamCheck = false
 
--- Helper: Get team color (or nil)
-local function getPlayerTeamColor(player)
-    return player.TeamColor
-end
+-- Utility functions here (keep your existing ones)...
 
--- 🧠 Check visibility ignoring local & target
-local function isTargetVisible(targetCharacter)
-    local origin = Camera.CFrame.Position
-    local targetPart = targetCharacter:FindFirstChild(aimAtHead and "Head" or "HumanoidRootPart")
-    if not targetPart then return false end
-    local direction = (targetPart.Position - origin).Unit * (targetPart.Position - origin).Magnitude
+-- GUI Setup
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "AimbotUI"
 
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, targetCharacter}
-    local result = workspace:Raycast(origin, direction, raycastParams)
+-- Main Frame (for draggable container)
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 250, 0, 140)
+mainFrame.Position = UDim2.new(0, 20, 0, 20)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = ScreenGui
+mainFrame.Active = true
+mainFrame.Draggable = true
 
-    if not result then
-        return true
-    elseif result.Instance and result.Instance:IsDescendantOf(targetCharacter) then
-        return true
-    end
+-- Toggle Aimbot Button
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 120, 0, 30)
+toggleButton.Position = UDim2.new(0, 10, 0, 10)
+toggleButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+toggleButton.TextColor3 = Color3.new(1, 1, 1)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 18
+toggleButton.Text = "Aimbot: OFF"
+toggleButton.Parent = mainFrame
 
-    return false
-end
+toggleButton.MouseButton1Click:Connect(function()
+    aimbotEnabled = not aimbotEnabled
+    toggleButton.Text = "Aimbot: " .. (aimbotEnabled and "ON" or "OFF")
+    toggleButton.BackgroundColor3 = aimbotEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(150, 0, 0)
+end)
 
--- 🔍 Find closest valid player
+-- Visibility Check Button
+local visibilityCheckbox = Instance.new("TextButton")
+visibilityCheckbox.Size = UDim2.new(0, 220, 0, 30)
+visibilityCheckbox.Position = UDim2.new(0, 10, 0, 50)
+visibilityCheckbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+visibilityCheckbox.TextColor3 = Color3.new(1, 1, 1)
+visibilityCheckbox.Font = Enum.Font.SourceSansBold
+visibilityCheckbox.TextSize = 18
+visibilityCheckbox.Text = "Visibility Check: OFF"
+visibilityCheckbox.Parent = mainFrame
+
+visibilityCheckbox.MouseButton1Click:Connect(function()
+    visibilityCheck = not visibilityCheck
+    visibilityCheckbox.Text = "Visibility Check: " .. (visibilityCheck and "ON" or "OFF")
+    visibilityCheckbox.BackgroundColor3 = visibilityCheck and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
+end)
+
+-- Aim at Head Button
+local headAimCheckbox = Instance.new("TextButton")
+headAimCheckbox.Size = UDim2.new(0, 150, 0, 30)
+headAimCheckbox.Position = UDim2.new(0, 10, 0, 90)
+headAimCheckbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+headAimCheckbox.TextColor3 = Color3.new(1, 1, 1)
+headAimCheckbox.Font = Enum.Font.SourceSansBold
+headAimCheckbox.TextSize = 18
+headAimCheckbox.Text = "Aim at Head: OFF"
+headAimCheckbox.Parent = mainFrame
+
+headAimCheckbox.MouseButton1Click:Connect(function()
+    aimAtHead = not aimAtHead
+    headAimCheckbox.Text = "Aim at Head: " .. (aimAtHead and "ON" or "OFF")
+    headAimCheckbox.BackgroundColor3 = aimAtHead and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
+end)
+
+-- Team Check Button
+local teamCheckCheckbox = Instance.new("TextButton")
+teamCheckCheckbox.Size = UDim2.new(0, 180, 0, 30)
+teamCheckCheckbox.Position = UDim2.new(0, 10, 0, 130)
+teamCheckCheckbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+teamCheckCheckbox.TextColor3 = Color3.new(1, 1, 1)
+teamCheckCheckbox.Font = Enum.Font.SourceSansBold
+teamCheckCheckbox.TextSize = 18
+teamCheckCheckbox.Text = "Ignore Teammates: OFF"
+teamCheckCheckbox.Parent = mainFrame
+
+teamCheckCheckbox.MouseButton1Click:Connect(function()
+    teamCheck = not teamCheck
+    teamCheckCheckbox.Text = "Ignore Teammates: " .. (teamCheck and "ON" or "OFF")
+    teamCheckCheckbox.BackgroundColor3 = teamCheck and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
+end)
+
+-- Update your targeting function to consider `aimAtHead` and `teamCheck`
 local function getClosestPlayer()
     local closest = nil
     local shortestDistance = math.huge
 
-    local localChar = LocalPlayer.Character
-    if not localChar or not localChar:FindFirstChild("HumanoidRootPart") then return nil end
-    local localHRP = localChar.HumanoidRootPart
-    local localTeam = getPlayerTeamColor(LocalPlayer)
-
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            -- Skip teammates if option is on
-            if ignoreTeam and getPlayerTeamColor(player) == localTeam then
-                continue
+            if teamCheck and player.Team == LocalPlayer.Team then
+                -- Skip teammates if teamCheck is ON
+                goto continue
             end
 
-            local targetPart = player.Character:FindFirstChild(aimAtHead and "Head" or "HumanoidRootPart")
-            if not targetPart then
-                continue
-            end
+            local targetPart = aimAtHead and player.Character:FindFirstChild("Head") or player.Character.HumanoidRootPart
+            if not targetPart then goto continue end
 
-            local distance = (targetPart.Position - localHRP.Position).Magnitude
+            local distance = (targetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
 
             if distance < shortestDistance then
                 if visibilityCheck then
-                    if isTargetVisible(player.Character) then
+                    if isTargetVisible(targetPart.Position) then
                         closest = player
                         shortestDistance = distance
                     end
@@ -71,108 +123,10 @@ local function getClosestPlayer()
                 end
             end
         end
+        ::continue::
     end
 
     return closest
 end
 
--- 🎯 Aimbot logic
-RunService.RenderStepped:Connect(function()
-    if aimbotEnabled then
-        local target = getClosestPlayer()
-        if target and target.Character then
-            local targetPart = target.Character:FindFirstChild(aimAtHead and "Head" or "HumanoidRootPart")
-            if targetPart then
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
-            end
-        end
-    end
-end)
-
--- 📱 GUI Setup for Samsung S21 size (1080x2400 scaled)
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AimbotUI"
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
--- Container frame (for dragging)
-local container = Instance.new("Frame")
-container.Size = UDim2.new(0, 220, 0, 170)
-container.Position = UDim2.new(0, 20, 0.75, 0)
-container.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-container.BorderSizePixel = 0
-container.Active = true
-container.Draggable = true
-container.Parent = ScreenGui
-
--- Title Label
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 30)
-title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-title.TextColor3 = Color3.new(1, 1, 1)
-title.Font = Enum.Font.SourceSansBold
-title.Text = "Mobile Aimbot"
-title.Parent = container
-
--- 🟢 Toggle Button
-local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(0.9, 0, 0, 35)
-toggleButton.Position = UDim2.new(0.05, 0, 0.22, 0)
-toggleButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-toggleButton.TextColor3 = Color3.new(1, 1, 1)
-toggleButton.Font = Enum.Font.SourceSansBold
-toggleButton.Text = "Aimbot: OFF"
-toggleButton.Parent = container
-
-toggleButton.MouseButton1Click:Connect(function()
-    aimbotEnabled = not aimbotEnabled
-    toggleButton.Text = "Aimbot: " .. (aimbotEnabled and "ON" or "OFF")
-    toggleButton.BackgroundColor3 = aimbotEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(150, 0, 0)
-end)
-
--- ✅ Visibility Checkbox
-local visibilityCheckbox = Instance.new("TextButton")
-visibilityCheckbox.Size = UDim2.new(0.9, 0, 0, 30)
-visibilityCheckbox.Position = UDim2.new(0.05, 0, 0.45, 0)
-visibilityCheckbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-visibilityCheckbox.TextColor3 = Color3.new(1, 1, 1)
-visibilityCheckbox.Font = Enum.Font.SourceSansBold
-visibilityCheckbox.Text = "Visibility Check: OFF"
-visibilityCheckbox.Parent = container
-
-visibilityCheckbox.MouseButton1Click:Connect(function()
-    visibilityCheck = not visibilityCheck
-    visibilityCheckbox.Text = "Visibility Check: " .. (visibilityCheck and "ON" or "OFF")
-    visibilityCheckbox.BackgroundColor3 = visibilityCheck and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
-end)
-
--- 🟡 Aim at Head Checkbox
-local aimAtHeadCheckbox = Instance.new("TextButton")
-aimAtHeadCheckbox.Size = UDim2.new(0.9, 0, 0, 30)
-aimAtHeadCheckbox.Position = UDim2.new(0.05, 0, 0.60, 0)
-aimAtHeadCheckbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-aimAtHeadCheckbox.TextColor3 = Color3.new(1, 1, 1)
-aimAtHeadCheckbox.Font = Enum.Font.SourceSansBold
-aimAtHeadCheckbox.Text = "Aim at Head: OFF"
-aimAtHeadCheckbox.Parent = container
-
-aimAtHeadCheckbox.MouseButton1Click:Connect(function()
-    aimAtHead = not aimAtHead
-    aimAtHeadCheckbox.Text = "Aim at Head: " .. (aimAtHead and "ON" or "OFF")
-    aimAtHeadCheckbox.BackgroundColor3 = aimAtHead and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
-end)
-
--- 🔴 Ignore Team Checkbox
-local ignoreTeamCheckbox = Instance.new("TextButton")
-ignoreTeamCheckbox.Size = UDim2.new(0.9, 0, 0, 30)
-ignoreTeamCheckbox.Position = UDim2.new(0.05, 0, 0.75, 0)
-ignoreTeamCheckbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-ignoreTeamCheckbox.TextColor3 = Color3.new(1, 1, 1)
-ignoreTeamCheckbox.Font = Enum.Font.SourceSansBold
-ignoreTeamCheckbox.Text = "Ignore Team: OFF"
-ignoreTeamCheckbox.Parent = container
-
-ignoreTeamCheckbox.MouseButton1Click:Connect(function()
-    ignoreTeam = not ignoreTeam
-    ignoreTeamCheckbox.Text = "Ignore Team: " .. (ignoreTeam and "ON" or "OFF")
-    ignoreTeamCheckbox.BackgroundColor3 = ignoreTeam and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(30, 30, 30)
-end)
+-- Your RunService RenderStepped aiming logic here, using the new targeting
