@@ -1,3 +1,6 @@
+-- Roblox Mobile Aimbot with Toggle, Visibility Check, Head Aim, Ignore Teammates, Auto Shoot, Manual Target Switch,
+-- Draggable & Retractable GUI fitting Samsung S21 screen
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -9,246 +12,286 @@ local aimbotEnabled = false
 local visibilityCheck = false
 local aimAtHead = false
 local ignoreTeammates = false
+local autoShootEnabled = false
 
-local targetList = {}
-local currentTargetIndex = 0
+-- Targeting variables
+local currentTargets = {}
+local targetIndex = 1
 
--- UI creation
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AimbotUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+-- Utility: Raycast visibility check
+local function isTargetVisible(targetPosition)
+    local origin = Camera.CFrame.Position
+    local direction = (targetPosition - origin).Unit * 1000
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    local result = workspace:Raycast(origin, direction, raycastParams)
 
-local container = Instance.new("Frame")
-container.Size = UDim2.new(0, 40, 0, 40)
-container.Position = UDim2.new(0, 20, 0, 20)
-container.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-container.BorderSizePixel = 0
-container.Parent = ScreenGui
-container.Active = true
-container.Draggable = true
-
-local retractBtn = Instance.new("TextButton")
-retractBtn.Size = UDim2.new(1, 0, 1, 0)
-retractBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-retractBtn.TextColor3 = Color3.new(1, 1, 1)
-retractBtn.Font = Enum.Font.SourceSansBold
-retractBtn.TextSize = 20
-retractBtn.Text = "+"
-retractBtn.Parent = container
-
-local expanded = Instance.new("Frame")
-expanded.Size = UDim2.new(0, 220, 0, 230)
-expanded.Position = UDim2.new(1, 10, 0, 0)
-expanded.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-expanded.BorderSizePixel = 0
-expanded.Visible = false
-expanded.Parent = container
-
--- Utility to create toggle buttons
-local function createToggleButton(text, posY)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 200, 0, 35)
-    btn.Position = UDim2.new(0, 10, 0, posY)
-    btn.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 18
-    btn.Text = text
-    btn.Parent = expanded
-    return btn
-end
-
-local aimbotBtn = createToggleButton("Aimbot: OFF", 10)
-local visibilityBtn = createToggleButton("Visibility Check: OFF", 55)
-local headAimBtn = createToggleButton("Aim At Head: OFF", 100)
-local ignoreTeamBtn = createToggleButton("Ignore Teammates: OFF", 145)
-
-local targetLabel = Instance.new("TextLabel")
-targetLabel.Size = UDim2.new(0, 200, 0, 25)
-targetLabel.Position = UDim2.new(0, 10, 0, 190)
-targetLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-targetLabel.TextColor3 = Color3.new(1, 1, 1)
-targetLabel.Font = Enum.Font.SourceSansBold
-targetLabel.TextSize = 16
-targetLabel.Text = "Target: None"
-targetLabel.Parent = expanded
-
-local prevTargetBtn = Instance.new("TextButton")
-prevTargetBtn.Size = UDim2.new(0, 95, 0, 25)
-prevTargetBtn.Position = UDim2.new(0, 10, 0, 220)
-prevTargetBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-prevTargetBtn.TextColor3 = Color3.new(1, 1, 1)
-prevTargetBtn.Font = Enum.Font.SourceSansBold
-prevTargetBtn.TextSize = 16
-prevTargetBtn.Text = "< Prev"
-prevTargetBtn.Parent = expanded
-
-local nextTargetBtn = Instance.new("TextButton")
-nextTargetBtn.Size = UDim2.new(0, 95, 0, 25)
-nextTargetBtn.Position = UDim2.new(0, 115, 0, 220)
-nextTargetBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-nextTargetBtn.TextColor3 = Color3.new(1, 1, 1)
-nextTargetBtn.Font = Enum.Font.SourceSansBold
-nextTargetBtn.TextSize = 16
-nextTargetBtn.Text = "Next >"
-nextTargetBtn.Parent = expanded
-
--- Toggle GUI expand/retract
-local function toggleGUI()
-    if expanded.Visible then
-        expanded.Visible = false
-        container.Size = UDim2.new(0, 40, 0, 40)
-        retractBtn.Text = "+"
-    else
-        refreshTargetList()
-        updateTargetLabel()
-        expanded.Visible = true
-        container.Size = UDim2.new(0, 220, 0, 255)
-        retractBtn.Text = "×"
-    end
-end
-
-retractBtn.MouseButton1Click:Connect(toggleGUI)
-
--- Refresh target list filtered
-function refreshTargetList()
-    targetList = {}
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 and player.Character:FindFirstChild("HumanoidRootPart") then
-            if ignoreTeammates then
-                if LocalPlayer.Team and player.Team and LocalPlayer.Team == player.Team then
-                    -- skip teammates
-                else
-                    table.insert(targetList, player)
+    if result and result.Instance then
+        -- Check if hit is part of targetPosition's character
+        local hitPart = result.Instance
+        local targetModel = nil
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                if (player.Character.HumanoidRootPart.Position - targetPosition).Magnitude < 0.1 then
+                    targetModel = player.Character
+                    break
                 end
-            else
-                table.insert(targetList, player)
+            end
+        end
+        if hitPart:IsDescendantOf(targetModel) then
+            return true -- Ray hit the target or its part, so visible
+        else
+            return false -- Something else blocking
+        end
+    end
+
+    return true -- No hit means clear line
+end
+
+-- Get valid targets considering settings
+local function getValidTargets()
+    local targets = {}
+
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return targets
+    end
+
+    local localTeam = nil
+    pcall(function()
+        localTeam = LocalPlayer.Team
+    end)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                if ignoreTeammates then
+                    local pTeam = nil
+                    pcall(function()
+                        pTeam = player.Team
+                    end)
+                    if localTeam and pTeam and localTeam == pTeam then
+                        continue
+                    end
+                end
+
+                if visibilityCheck then
+                    if not isTargetVisible(player.Character.HumanoidRootPart.Position) then
+                        continue
+                    end
+                end
+
+                table.insert(targets, player)
             end
         end
     end
-    if #targetList == 0 then
-        currentTargetIndex = 0
-    elseif currentTargetIndex == 0 or currentTargetIndex > #targetList then
-        currentTargetIndex = 1
+
+    -- Sort by distance
+    table.sort(targets, function(a,b)
+        local aDist = (a.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+        local bDist = (b.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+        return aDist < bDist
+    end)
+
+    return targets
+end
+
+-- GUI Setup
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AimbotUI"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+-- Draggable frame utility
+local function makeDraggable(frame)
+    local dragging, dragInput, dragStart, startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
     end
+
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
 end
 
--- Update target label
-function updateTargetLabel()
-    local target = getCurrentTarget()
-    if target then
-        targetLabel.Text = "Target: " .. target.Name
-    else
-        targetLabel.Text = "Target: None"
-    end
+-- Create small retractable button
+local retractButton = Instance.new("TextButton")
+retractButton.Size = UDim2.new(0, 40, 0, 40)
+retractButton.Position = UDim2.new(0, 10, 0.8, 0)
+retractButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+retractButton.TextColor3 = Color3.new(1,1,1)
+retractButton.Font = Enum.Font.SourceSansBold
+retractButton.Text = ">>"
+retractButton.Parent = ScreenGui
+
+-- Create main options frame (hidden by default)
+local optionsFrame = Instance.new("Frame")
+optionsFrame.Size = UDim2.new(0, 220, 0, 320)
+optionsFrame.Position = UDim2.new(0, 10, 0.6, 0)
+optionsFrame.BackgroundColor3 = Color3.fromRGB(35,35,35)
+optionsFrame.Visible = false
+optionsFrame.Parent = ScreenGui
+makeDraggable(optionsFrame)
+
+-- Helper to create buttons inside optionsFrame
+local function createButton(text, pos)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 200, 0, 40)
+    btn.Position = pos
+    btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 20
+    btn.Text = text
+    btn.Parent = optionsFrame
+    return btn
 end
 
--- Get current target
-function getCurrentTarget()
-    if #targetList == 0 or currentTargetIndex == 0 then return nil end
-    return targetList[currentTargetIndex]
+-- Create all toggle buttons with update helper
+local function updateButtonState(button, state)
+    button.Text = button.Text:match("^[^:]+") .. ": " .. (state and "ON" or "OFF")
+    button.BackgroundColor3 = state and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
 end
 
--- Switch target
-function switchTarget(offset)
-    if #targetList == 0 then
-        currentTargetIndex = 0
-        updateTargetLabel()
-        return
-    end
-    currentTargetIndex = currentTargetIndex + offset
-    if currentTargetIndex < 1 then
-        currentTargetIndex = #targetList
-    elseif currentTargetIndex > #targetList then
-        currentTargetIndex = 1
-    end
-    updateTargetLabel()
-end
-
--- Check visibility function
-local function isTargetVisible(targetPos, targetChar)
-    local origin = Camera.CFrame.Position
-    local direction = targetPos - origin
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, targetChar}
-    local raycastResult = workspace:Raycast(origin, direction, raycastParams)
-    return (raycastResult == nil)
-end
-
--- Button click handlers
-aimbotBtn.MouseButton1Click:Connect(function()
+-- Buttons
+local toggleAimbotBtn = createButton("Aimbot: OFF", UDim2.new(0,10,0,10))
+toggleAimbotBtn.MouseButton1Click:Connect(function()
     aimbotEnabled = not aimbotEnabled
-    aimbotBtn.Text = "Aimbot: " .. (aimbotEnabled and "ON" or "OFF")
-    aimbotBtn.BackgroundColor3 = aimbotEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+    updateButtonState(toggleAimbotBtn, aimbotEnabled)
 end)
 
-visibilityBtn.MouseButton1Click:Connect(function()
+local toggleVisibilityBtn = createButton("Visibility Check: OFF", UDim2.new(0,10,0,60))
+toggleVisibilityBtn.MouseButton1Click:Connect(function()
     visibilityCheck = not visibilityCheck
-    visibilityBtn.Text = "Visibility Check: " .. (visibilityCheck and "ON" or "OFF")
-    visibilityBtn.BackgroundColor3 = visibilityCheck and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(100, 0, 0)
+    updateButtonState(toggleVisibilityBtn, visibilityCheck)
 end)
 
-headAimBtn.MouseButton1Click:Connect(function()
+local toggleAimHeadBtn = createButton("Aim at Head: OFF", UDim2.new(0,10,0,110))
+toggleAimHeadBtn.MouseButton1Click:Connect(function()
     aimAtHead = not aimAtHead
-    headAimBtn.Text = "Aim At Head: " .. (aimAtHead and "ON" or "OFF")
-    headAimBtn.BackgroundColor3 = aimAtHead and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(100, 0, 0)
+    updateButtonState(toggleAimHeadBtn, aimAtHead)
 end)
 
-ignoreTeamBtn.MouseButton1Click:Connect(function()
+local toggleIgnoreTeamBtn = createButton("Ignore Teammates: OFF", UDim2.new(0,10,0,160))
+toggleIgnoreTeamBtn.MouseButton1Click:Connect(function()
     ignoreTeammates = not ignoreTeammates
-    ignoreTeamBtn.Text = "Ignore Teammates: " .. (ignoreTeammates and "ON" or "OFF")
-    ignoreTeamBtn.BackgroundColor3 = ignoreTeammates and Color3.fromRGB(50, 120, 200) or Color3.fromRGB(100, 0, 0)
-    refreshTargetList()
-    updateTargetLabel()
+    updateButtonState(toggleIgnoreTeamBtn, ignoreTeammates)
 end)
+
+local toggleAutoShootBtn = createButton("Auto Shoot: OFF", UDim2.new(0,10,0,210))
+toggleAutoShootBtn.MouseButton1Click:Connect(function()
+    autoShootEnabled = not autoShootEnabled
+    updateButtonState(toggleAutoShootBtn, autoShootEnabled)
+end)
+
+-- Manual target switch buttons
+local prevTargetBtn = createButton("Previous Target", UDim2.new(0,10,0,260))
+local nextTargetBtn = createButton("Next Target", UDim2.new(0,10,0,310))
 
 prevTargetBtn.MouseButton1Click:Connect(function()
-    switchTarget(-1)
+    if #currentTargets > 0 then
+        targetIndex = targetIndex - 1
+        if targetIndex < 1 then
+            targetIndex = #currentTargets
+        end
+    end
 end)
 
 nextTargetBtn.MouseButton1Click:Connect(function()
-    switchTarget(1)
+    if #currentTargets > 0 then
+        targetIndex = targetIndex + 1
+        if targetIndex > #currentTargets then
+            targetIndex = 1
+        end
+    end
 end)
 
--- Main aiming loop
+-- Retract button toggle
+retractButton.MouseButton1Click:Connect(function()
+    optionsFrame.Visible = not optionsFrame.Visible
+    retractButton.Text = optionsFrame.Visible and "<<" or ">>"
+end)
+
+-- Make retract button draggable too
+makeDraggable(retractButton)
+
+-- Aimbot loop
 RunService.RenderStepped:Connect(function()
-    if not aimbotEnabled then return end
-    refreshTargetList()
-    local target = getCurrentTarget()
-    if not target then return end
-    local char = target.Character
-    if not char then return end
-    local humanoid = char:FindFirstChild("Humanoid")
-    local rootPart = char:FindFirstChild("HumanoidRootPart")
-    if not humanoid or humanoid.Health <= 0 or not rootPart then return end
+    if aimbotEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        currentTargets = getValidTargets()
+        if #currentTargets == 0 then
+            targetIndex = 1
+            return
+        end
 
-    -- Choose aim position
-    local aimPos
-    if aimAtHead then
-        local head = char:FindFirstChild("Head")
-        if head then aimPos = head.Position else aimPos = rootPart.Position end
-    else
-        aimPos = rootPart.Position
-    end
+        if targetIndex > #currentTargets then
+            targetIndex = 1
+        elseif targetIndex < 1 then
+            targetIndex = #currentTargets
+        end
 
-    if visibilityCheck and not isTargetVisible(aimPos, char) then
-        -- Not visible, don't aim
-        return
-    end
+        local target = currentTargets[targetIndex]
+        if target and target.Character then
+            local humanoid = target.Character:FindFirstChildOfClass("Humanoid")
+            local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+            if humanoid and humanoid.Health > 0 and hrp then
+                local aimPart = aimAtHead and target.Character:FindFirstChild("Head") or hrp
+                if aimPart then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, aimPart.Position)
 
-    -- Aim smoothing (optional, here direct)
-    local cameraCFrame = Camera.CFrame
-    local direction = (aimPos - cameraCFrame.Position).Unit
-    Camera.CFrame = CFrame.new(cameraCFrame.Position, cameraCFrame.Position + direction)
-end)
-
--- Auto refresh targets every 1 second
-spawn(function()
-    while true do
-        refreshTargetList()
-        updateTargetLabel()
-        wait(1)
+                    -- Auto Shoot
+                    if autoShootEnabled then
+                        local character = LocalPlayer.Character
+                        if character then
+                            local tool = character:FindFirstChildOfClass("Tool")
+                            if tool then
+                                -- Try to fire using tool's RemoteEvent if exists
+                                local fireEvent = tool:FindFirstChild("Fire") or tool:FindFirstChild("Shoot")
+                                if fireEvent and fireEvent:IsA("RemoteEvent") then
+                                    fireEvent:FireServer()
+                                else
+                                    -- Fallback: simulate mouse click (may not work in all games)
+                                    UserInputService.MouseButton1Down:Wait()
+                                end
+                            end
+                        end
+                    end
+                end
+            else
+                -- Target died, refresh targets
+                currentTargets = getValidTargets()
+                targetIndex = 1
+            end
+        end
     end
 end)
